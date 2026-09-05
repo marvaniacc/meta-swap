@@ -11,6 +11,8 @@ Telegram presentation contracts.
 - `meta-swap-application`: use-case ports and optimistic-concurrency orchestration. A
   production repository must use PostgreSQL as the durable source of truth.
 - `meta-swap-presentation`: Telegram-safe message and opaque callback contracts.
+- `meta-swap-runtime`: validated process configuration that redacts database and webhook
+  secrets from debug output.
 
 No live TON wallet, quote-provider, DEX, or chain-verification integration is present.
 Those adapters remain blocked by the Phase 0.1 evidence gate in `docs/TON_PHASE0_GATE.md`.
