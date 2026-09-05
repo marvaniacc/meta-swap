@@ -1,0 +1,4 @@
+interface:
+  display_name: "Telegram Bot Production"
+  short_description: "Meta Swap governed workflow"
+  default_prompt: "Apply the telegram-bot-production workflow to this Meta Swap task."

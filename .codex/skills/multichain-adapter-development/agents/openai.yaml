@@ -1,0 +1,4 @@
+interface:
+  display_name: "Multichain Adapter Development"
+  short_description: "Meta Swap governed workflow"
+  default_prompt: "Apply the multichain-adapter-development workflow to this Meta Swap task."

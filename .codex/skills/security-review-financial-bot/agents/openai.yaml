@@ -1,0 +1,4 @@
+interface:
+  display_name: "Security Review Financial Bot"
+  short_description: "Meta Swap governed workflow"
+  default_prompt: "Apply the security-review-financial-bot workflow to this Meta Swap task."
