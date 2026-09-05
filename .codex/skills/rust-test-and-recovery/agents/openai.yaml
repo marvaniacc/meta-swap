@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust Test And Recovery"
+  short_description: "Meta Swap governed workflow"
+  default_prompt: "Apply the rust-test-and-recovery workflow to this Meta Swap task."

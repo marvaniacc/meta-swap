@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ton Wallet Chain Verification"
+  short_description: "Meta Swap governed workflow"
+  default_prompt: "Apply the ton-wallet-chain-verification workflow to this Meta Swap task."

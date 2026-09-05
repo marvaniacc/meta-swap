@@ -1,0 +1,4 @@
+interface:
+  display_name: "Noncustodial Financial Correctness"
+  short_description: "Meta Swap governed workflow"
+  default_prompt: "Apply the noncustodial-financial-correctness workflow to this Meta Swap task."

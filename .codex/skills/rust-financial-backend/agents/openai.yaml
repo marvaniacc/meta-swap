@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust Financial Backend"
+  short_description: "Meta Swap governed workflow"
+  default_prompt: "Apply the rust-financial-backend workflow to this Meta Swap task."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Referral And Affiliate Accounting"
+  short_description: "Meta Swap governed workflow"
+  default_prompt: "Apply the referral-and-affiliate-accounting workflow to this Meta Swap task."
