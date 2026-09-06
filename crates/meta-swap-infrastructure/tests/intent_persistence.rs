@@ -47,6 +47,32 @@ async fn persists_intent_audit_and_outbox_atomically_and_rejects_duplicate_deliv
     assert_eq!(count(&pool, "transaction_intents").await, 1);
     assert_eq!(count(&pool, "audit_events").await, 1);
     assert_eq!(count(&pool, "outbox_events").await, 1);
+codex/explain-codebase-structure-and-key-concepts-obhmcr
+
+    assert!(
+        sqlx::query("UPDATE audit_events SET action = 'rewritten'")
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    sqlx::query(
+        "INSERT INTO ledger_entries (id, swap_id, event_type, asset_chain_id, asset_address, \
+         atomic_amount, correlation_id, effective_at, policy_version) \
+         VALUES ('00000000-0000-0000-0000-000000000005'::uuid, $1::uuid, 'fee_realized', \
+         'ton-mainnet', 'native', 10, 'fee-1', NOW(), 'policy-1')",
+    )
+    .bind(SWAP_ID)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(
+        sqlx::query("DELETE FROM ledger_entries")
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+
+main
 }
 
 fn request() -> PersistIntentRequest {

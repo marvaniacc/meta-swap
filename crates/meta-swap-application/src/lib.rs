@@ -149,6 +149,8 @@ impl TransitionAuthority {
         )
     }
 }
+codex/explain-codebase-structure-and-key-concepts-obhmcr
+
 
 /// The trusted application component requesting a swap state transition.
 ///
@@ -241,6 +243,7 @@ impl TransitionAuthority {
         )
     }
 }
+main
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SwapRecord {
