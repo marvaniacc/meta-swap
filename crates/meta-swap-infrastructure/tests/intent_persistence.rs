@@ -47,6 +47,7 @@ async fn persists_intent_audit_and_outbox_atomically_and_rejects_duplicate_deliv
     assert_eq!(count(&pool, "transaction_intents").await, 1);
     assert_eq!(count(&pool, "audit_events").await, 1);
     assert_eq!(count(&pool, "outbox_events").await, 1);
+codex/explain-codebase-structure-and-key-concepts-obhmcr
 
     assert!(
         sqlx::query("UPDATE audit_events SET action = 'rewritten'")
@@ -70,6 +71,8 @@ async fn persists_intent_audit_and_outbox_atomically_and_rejects_duplicate_deliv
             .await
             .is_err()
     );
+
+main
 }
 
 fn request() -> PersistIntentRequest {

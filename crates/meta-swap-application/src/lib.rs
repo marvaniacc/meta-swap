@@ -149,6 +149,101 @@ impl TransitionAuthority {
         )
     }
 }
+codex/explain-codebase-structure-and-key-concepts-obhmcr
+
+
+/// The trusted application component requesting a swap state transition.
+///
+/// This is selected by the use case that handles an authenticated event; it must never be
+/// populated directly from Telegram callback data or another untrusted transport payload.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TransitionAuthority {
+    User,
+    QuoteProvider,
+    IntentBuilder,
+    WalletObserver,
+    ChainObserver,
+    Verifier,
+    Finalizer,
+    ExpiryWorker,
+}
+
+impl TransitionAuthority {
+    #[must_use]
+    pub const fn permits(self, current: SwapState, next: SwapState) -> bool {
+        matches!(
+            (self, current, next),
+            (
+                Self::User,
+                SwapState::Draft,
+                SwapState::AwaitingPair | SwapState::Cancelled
+            ) | (
+                Self::User,
+                SwapState::AwaitingPair,
+                SwapState::AwaitingAmount | SwapState::Cancelled
+            ) | (
+                Self::User,
+                SwapState::AwaitingAmount,
+                SwapState::Quoting | SwapState::Cancelled
+            ) | (
+                Self::User,
+                SwapState::QuoteAvailable,
+                SwapState::AwaitingConfirmation | SwapState::Cancelled
+            ) | (
+                Self::User,
+                SwapState::AwaitingConfirmation,
+                SwapState::BuildingIntent | SwapState::Cancelled
+            ) | (
+                Self::QuoteProvider,
+                SwapState::Quoting,
+                SwapState::QuoteAvailable | SwapState::Ambiguous
+            ) | (
+                Self::IntentBuilder,
+                SwapState::BuildingIntent,
+                SwapState::AwaitingWalletApproval
+                    | SwapState::QuoteAvailable
+                    | SwapState::Cancelled
+            ) | (
+                Self::WalletObserver,
+                SwapState::AwaitingWalletApproval,
+                SwapState::WalletResponseReceived
+                    | SwapState::QuoteAvailable
+                    | SwapState::Ambiguous
+            ) | (
+                Self::ChainObserver,
+                SwapState::AwaitingWalletApproval,
+                SwapState::ChainCandidateObserved | SwapState::Ambiguous
+            ) | (
+                Self::ChainObserver,
+                SwapState::WalletResponseReceived,
+                SwapState::ChainCandidateObserved
+                    | SwapState::FinancialVerificationPending
+                    | SwapState::Ambiguous
+            ) | (
+                Self::Verifier,
+                SwapState::ChainCandidateObserved,
+                SwapState::FinancialVerificationPending | SwapState::Ambiguous
+            ) | (
+                Self::Verifier,
+                SwapState::FinancialVerificationPending,
+                SwapState::SwapSucceeded | SwapState::SwapFailedOnchain | SwapState::Ambiguous
+            ) | (
+                Self::Verifier,
+                SwapState::Ambiguous,
+                SwapState::FinancialVerificationPending
+            ) | (
+                Self::Finalizer,
+                SwapState::SwapSucceeded,
+                SwapState::Finalized
+            ) | (
+                Self::Finalizer,
+                SwapState::SwapFailedOnchain,
+                SwapState::FinalizedFailed
+            ) | (Self::ExpiryWorker, _, SwapState::Cancelled)
+        )
+    }
+}
+main
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SwapRecord {
