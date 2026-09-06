@@ -6,6 +6,15 @@
 use core::fmt;
 use core::str::FromStr;
 
+/// The transaction model used by a chain adapter.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum ChainFamily {
+    Ton,
+    Evm,
+    Solana,
+    Bitcoin,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct ChainId(String);
 
@@ -24,6 +33,76 @@ impl ChainId {
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+/// A chain network identifier supplied by configuration, never inferred from a wallet response.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct NetworkId(String);
+
+impl NetworkId {
+    /// # Errors
+    ///
+    /// Returns [`IdentityError::Empty`] when `value` is blank.
+    pub fn new(value: impl Into<String>) -> Result<Self, IdentityError> {
+        let value = value.into();
+        if value.trim().is_empty() {
+            return Err(IdentityError::Empty);
+        }
+        Ok(Self(value))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Stable chain context used to scope assets, intents, and verification evidence.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct ChainContext {
+    chain_id: ChainId,
+    family: ChainFamily,
+    network_id: NetworkId,
+}
+
+impl ChainContext {
+    #[must_use]
+    pub const fn new(chain_id: ChainId, family: ChainFamily, network_id: NetworkId) -> Self {
+        Self {
+            chain_id,
+            family,
+            network_id,
+        }
+    }
+
+    #[must_use]
+    pub const fn chain_id(&self) -> &ChainId {
+        &self.chain_id
+    }
+
+    #[must_use]
+    pub const fn family(&self) -> ChainFamily {
+        self.family
+    }
+
+    #[must_use]
+    pub const fn network_id(&self) -> &NetworkId {
+        &self.network_id
+    }
+}
+
+/// Whether an observed execution has reached the adapter-defined finality threshold.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum FinalityLevel {
+    Observed,
+    Finalized,
+}
+
+impl FinalityLevel {
+    #[must_use]
+    pub const fn is_finalized(self) -> bool {
+        matches!(self, Self::Finalized)
     }
 }
 
@@ -129,6 +208,139 @@ impl fmt::Display for AmountError {
     }
 }
 impl std::error::Error for AmountError {}
+
+/// A versioned policy snapshot that is bound to an immutable business intent.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct PolicyVersion(String);
+
+impl PolicyVersion {
+    /// # Errors
+    ///
+    /// Returns [`IdentityError::Empty`] when `value` is blank.
+    pub fn new(value: impl Into<String>) -> Result<Self, IdentityError> {
+        let value = value.into();
+        if value.trim().is_empty() {
+            return Err(IdentityError::Empty);
+        }
+        Ok(Self(value))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Immutable business terms that must be matched by later transaction compilation and verification.
+///
+/// This contains no wallet signing material or adapter-specific payload. Those remain outside the
+/// domain boundary and must be correlated to this intent by a stable identifier.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SwapIntent {
+    id: String,
+    chain_context: ChainContext,
+    input: AssetAmount,
+    output_asset: AssetId,
+    minimum_received: AssetAmount,
+    policy_version: PolicyVersion,
+}
+
+impl SwapIntent {
+    /// # Errors
+    ///
+    /// Returns an error for a blank identifier, a cross-chain asset, mismatched output minimum,
+    /// identical input/output assets, or a zero input amount.
+    pub fn new(
+        id: impl Into<String>,
+        chain_context: ChainContext,
+        input: AssetAmount,
+        output_asset: AssetId,
+        minimum_received: AssetAmount,
+        policy_version: PolicyVersion,
+    ) -> Result<Self, IntentError> {
+        let id = id.into();
+        if id.trim().is_empty() {
+            return Err(IntentError::EmptyId);
+        }
+        if input.atomic() == 0 {
+            return Err(IntentError::ZeroInputAmount);
+        }
+        if input.asset_id().chain_id() != chain_context.chain_id()
+            || output_asset.chain_id() != chain_context.chain_id()
+        {
+            return Err(IntentError::ChainMismatch);
+        }
+        if minimum_received.asset_id() != &output_asset {
+            return Err(IntentError::MinimumOutputAssetMismatch);
+        }
+        if input.asset_id() == &output_asset {
+            return Err(IntentError::IdenticalAssets);
+        }
+        Ok(Self {
+            id,
+            chain_context,
+            input,
+            output_asset,
+            minimum_received,
+            policy_version,
+        })
+    }
+
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    #[must_use]
+    pub const fn chain_context(&self) -> &ChainContext {
+        &self.chain_context
+    }
+
+    #[must_use]
+    pub const fn input(&self) -> &AssetAmount {
+        &self.input
+    }
+
+    #[must_use]
+    pub const fn output_asset(&self) -> &AssetId {
+        &self.output_asset
+    }
+
+    #[must_use]
+    pub const fn minimum_received(&self) -> &AssetAmount {
+        &self.minimum_received
+    }
+
+    #[must_use]
+    pub const fn policy_version(&self) -> &PolicyVersion {
+        &self.policy_version
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IntentError {
+    EmptyId,
+    ZeroInputAmount,
+    ChainMismatch,
+    MinimumOutputAssetMismatch,
+    IdenticalAssets,
+}
+
+impl fmt::Display for IntentError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::EmptyId => "intent identifier must not be empty",
+            Self::ZeroInputAmount => "intent input amount must be greater than zero",
+            Self::ChainMismatch => "intent assets must belong to its chain context",
+            Self::MinimumOutputAssetMismatch => {
+                "minimum output must use the requested output asset"
+            }
+            Self::IdenticalAssets => "intent input and output assets must differ",
+        })
+    }
+}
+
+impl std::error::Error for IntentError {}
 
 impl FromStr for AtomicAmount {
     type Err = AmountError;
@@ -268,6 +480,66 @@ mod tests {
     use super::*;
     fn ton() -> AssetId {
         AssetId::new(ChainId::new("ton-mainnet").unwrap(), "native").unwrap()
+    }
+    fn ton_context() -> ChainContext {
+        ChainContext::new(
+            ChainId::new("ton-mainnet").unwrap(),
+            ChainFamily::Ton,
+            NetworkId::new("mainnet").unwrap(),
+        )
+    }
+    #[test]
+    fn chain_context_keeps_family_and_network_explicit() {
+        let context = ChainContext::new(
+            ChainId::new("ton").unwrap(),
+            ChainFamily::Ton,
+            NetworkId::new("mainnet").unwrap(),
+        );
+        assert_eq!(context.chain_id().as_str(), "ton");
+        assert_eq!(context.family(), ChainFamily::Ton);
+        assert_eq!(context.network_id().as_str(), "mainnet");
+        assert!(FinalityLevel::Finalized.is_finalized());
+        assert!(!FinalityLevel::Observed.is_finalized());
+    }
+    #[test]
+    fn network_identity_cannot_be_blank() {
+        assert_eq!(NetworkId::new(" "), Err(IdentityError::Empty));
+    }
+    #[test]
+    fn intent_binds_assets_and_policy_to_one_chain_context() {
+        let input_asset = ton();
+        let output_asset =
+            AssetId::new(ChainId::new("ton-mainnet").unwrap(), "jetton:output").unwrap();
+        let intent = SwapIntent::new(
+            "intent-1",
+            ton_context(),
+            AssetAmount::new(input_asset, 1_000),
+            output_asset.clone(),
+            AssetAmount::new(output_asset, 900),
+            PolicyVersion::new("policy-2026-09-06").unwrap(),
+        )
+        .unwrap();
+        assert_eq!(intent.id(), "intent-1");
+        assert_eq!(intent.minimum_received().atomic(), 900);
+        assert_eq!(intent.policy_version().as_str(), "policy-2026-09-06");
+    }
+    #[test]
+    fn intent_rejects_a_minimum_output_for_another_asset() {
+        let output_asset =
+            AssetId::new(ChainId::new("ton-mainnet").unwrap(), "jetton:output").unwrap();
+        let other_asset =
+            AssetId::new(ChainId::new("ton-mainnet").unwrap(), "jetton:other").unwrap();
+        assert_eq!(
+            SwapIntent::new(
+                "intent-1",
+                ton_context(),
+                AssetAmount::new(ton(), 1_000),
+                output_asset,
+                AssetAmount::new(other_asset, 900),
+                PolicyVersion::new("policy-1").unwrap(),
+            ),
+            Err(IntentError::MinimumOutputAssetMismatch)
+        );
     }
     #[test]
     fn atomic_parser_rejects_decimal_values() {
