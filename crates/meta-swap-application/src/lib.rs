@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 //! Use-case ports and orchestration types. Implementations belong in infrastructure.
 
-use meta_swap_domain::{SwapIntent, SwapState};
+use meta_swap_domain::{AssetAmount, PolicyVersion, SwapIntent, SwapState, VerifiedExecution};
 
 /// Append-only audit information that is written with immutable intent creation.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -46,8 +46,9 @@ pub enum IntentPersistenceError {
     StorageFailure,
 }
 
-/// Port for a single PostgreSQL transaction that creates an immutable intent, audit event, and
+/// Port for a single `PostgreSQL` transaction that creates an immutable intent, audit event, and
 /// outbox event. Implementations must never persist a subset of the request.
+#[allow(async_fn_in_trait)]
 pub trait IntentRepository {
     /// # Errors
     ///
@@ -58,96 +59,83 @@ pub trait IntentRepository {
     ) -> Result<PersistedIntent, IntentPersistenceError>;
 }
 
-/// The trusted application component requesting a swap state transition.
-///
-/// This is selected by the use case that handles an authenticated event; it must never be
-/// populated directly from Telegram callback data or another untrusted transport payload.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TransitionAuthority {
-    User,
-    QuoteProvider,
-    IntentBuilder,
-    WalletObserver,
-    ChainObserver,
-    Verifier,
-    Finalizer,
-    ExpiryWorker,
+/// Append-only ledger record written from one finalized verified execution.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutionLedgerEntry {
+    pub entry_id: String,
+    pub kind: ExecutionLedgerEntryKind,
+    pub amount: AssetAmount,
 }
 
-impl TransitionAuthority {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExecutionLedgerEntryKind {
+    InputDebited,
+    OutputCredited,
+    ProductFeeRealized,
+}
+
+impl ExecutionLedgerEntryKind {
     #[must_use]
-    pub const fn permits(self, current: SwapState, next: SwapState) -> bool {
-        matches!(
-            (self, current, next),
-            (
-                Self::User,
-                SwapState::Draft,
-                SwapState::AwaitingPair | SwapState::Cancelled
-            ) | (
-                Self::User,
-                SwapState::AwaitingPair,
-                SwapState::AwaitingAmount | SwapState::Cancelled
-            ) | (
-                Self::User,
-                SwapState::AwaitingAmount,
-                SwapState::Quoting | SwapState::Cancelled
-            ) | (
-                Self::User,
-                SwapState::QuoteAvailable,
-                SwapState::AwaitingConfirmation | SwapState::Cancelled
-            ) | (
-                Self::User,
-                SwapState::AwaitingConfirmation,
-                SwapState::BuildingIntent | SwapState::Cancelled
-            ) | (
-                Self::QuoteProvider,
-                SwapState::Quoting,
-                SwapState::QuoteAvailable | SwapState::Ambiguous
-            ) | (
-                Self::IntentBuilder,
-                SwapState::BuildingIntent,
-                SwapState::AwaitingWalletApproval
-                    | SwapState::QuoteAvailable
-                    | SwapState::Cancelled
-            ) | (
-                Self::WalletObserver,
-                SwapState::AwaitingWalletApproval,
-                SwapState::WalletResponseReceived
-                    | SwapState::QuoteAvailable
-                    | SwapState::Ambiguous
-            ) | (
-                Self::ChainObserver,
-                SwapState::AwaitingWalletApproval,
-                SwapState::ChainCandidateObserved | SwapState::Ambiguous
-            ) | (
-                Self::ChainObserver,
-                SwapState::WalletResponseReceived,
-                SwapState::ChainCandidateObserved
-                    | SwapState::FinancialVerificationPending
-                    | SwapState::Ambiguous
-            ) | (
-                Self::Verifier,
-                SwapState::ChainCandidateObserved,
-                SwapState::FinancialVerificationPending | SwapState::Ambiguous
-            ) | (
-                Self::Verifier,
-                SwapState::FinancialVerificationPending,
-                SwapState::SwapSucceeded | SwapState::SwapFailedOnchain | SwapState::Ambiguous
-            ) | (
-                Self::Verifier,
-                SwapState::Ambiguous,
-                SwapState::FinancialVerificationPending
-            ) | (
-                Self::Finalizer,
-                SwapState::SwapSucceeded,
-                SwapState::Finalized
-            ) | (
-                Self::Finalizer,
-                SwapState::SwapFailedOnchain,
-                SwapState::FinalizedFailed
-            ) | (Self::ExpiryWorker, _, SwapState::Cancelled)
-        )
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::InputDebited => "input_debited",
+            Self::OutputCredited => "output_credited",
+            Self::ProductFeeRealized => "product_fee_realized",
+        }
     }
+}
+
+/// Verifier-proven fee facts. No formula is encoded here; fee extraction and rounding remain a
+/// Phase 0.1 verifier/policy concern.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RealizedFee {
+    pub fee_event_id: String,
+    pub amount: AssetAmount,
+}
+
+/// One all-or-nothing finalized-success persistence request. Construction requires a domain
+/// [`VerifiedExecution`], so wallet/provider acknowledgements cannot enter this port.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PersistVerifiedExecutionRequest {
+    pub swap_id: String,
+    pub expected_swap_version: u64,
+    pub idempotency_key: String,
+    pub intent_id: String,
+    pub execution_id: String,
+    pub verified_execution: VerifiedExecution,
+    pub policy_version: PolicyVersion,
+    pub audit_event: IntentAuditEvent,
+    pub outbox_event: IntentOutboxEvent,
+    pub ledger_entries: Vec<ExecutionLedgerEntry>,
+    pub realized_fee: Option<RealizedFee>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PersistedVerifiedExecution {
+    pub execution_id: String,
+    pub swap_version: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum VerifiedExecutionPersistenceError {
+    VersionConflict,
+    DuplicateIdempotencyKey,
+    DuplicateExecution,
+    InvalidLedgerEntries,
+    StorageFailure,
+}
+
+/// Port owned by the verifier-finalization use case. Implementations must atomically advance
+/// `financial_verification_pending` to `swap_succeeded` and persist all supplied financial facts.
+#[allow(async_fn_in_trait)]
+pub trait VerifiedExecutionRepository {
+    /// # Errors
+    ///
+    /// Returns a validation, durable idempotency, uniqueness, concurrency, or storage error.
+    async fn persist_verified_execution(
+        &mut self,
+        request: PersistVerifiedExecutionRequest,
+    ) -> Result<PersistedVerifiedExecution, VerifiedExecutionPersistenceError>;
 }
 
 /// The trusted application component requesting a swap state transition.
