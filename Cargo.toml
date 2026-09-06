@@ -2,6 +2,7 @@
 members = [
     "crates/meta-swap-domain",
     "crates/meta-swap-application",
+    "crates/meta-swap-infrastructure",
     "crates/meta-swap-presentation",
 ]
 resolver = "2"
