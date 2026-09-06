@@ -365,6 +365,77 @@ impl AtomicAmount {
     }
 }
 
+/// Finalized execution facts produced by an independent chain verifier.
+///
+/// This is deliberately chain-transport-neutral: an evidence reference is an opaque stable
+/// identifier, not a wallet response, BOC, broadcast acknowledgement, or provider response.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedExecution {
+    evidence_reference: String,
+    actual_input: AssetAmount,
+    actual_output: AssetAmount,
+}
+
+impl VerifiedExecution {
+    /// # Errors
+    ///
+    /// Returns an error unless final evidence matches the immutable intent's input and output
+    /// constraints.
+    pub fn new(
+        intent: &SwapIntent,
+        evidence_reference: impl Into<String>,
+        finality: FinalityLevel,
+        actual_input: AssetAmount,
+        actual_output: AssetAmount,
+    ) -> Result<Self, VerifiedExecutionError> {
+        let evidence_reference = evidence_reference.into();
+        if evidence_reference.trim().is_empty() {
+            return Err(VerifiedExecutionError::EmptyEvidenceReference);
+        }
+        if !finality.is_finalized() {
+            return Err(VerifiedExecutionError::EvidenceNotFinalized);
+        }
+        if actual_input != *intent.input() {
+            return Err(VerifiedExecutionError::InputMismatch);
+        }
+        if actual_output.asset_id() != intent.output_asset() {
+            return Err(VerifiedExecutionError::OutputAssetMismatch);
+        }
+        if actual_output.atomic() < intent.minimum_received().atomic() {
+            return Err(VerifiedExecutionError::MinimumReceivedNotMet);
+        }
+        Ok(Self {
+            evidence_reference,
+            actual_input,
+            actual_output,
+        })
+    }
+
+    #[must_use]
+    pub fn evidence_reference(&self) -> &str {
+        &self.evidence_reference
+    }
+
+    #[must_use]
+    pub const fn actual_input(&self) -> &AssetAmount {
+        &self.actual_input
+    }
+
+    #[must_use]
+    pub const fn actual_output(&self) -> &AssetAmount {
+        &self.actual_output
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VerifiedExecutionError {
+    EmptyEvidenceReference,
+    EvidenceNotFinalized,
+    InputMismatch,
+    OutputAssetMismatch,
+    MinimumReceivedNotMet,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SwapState {
     Draft,
@@ -571,6 +642,40 @@ mod tests {
         assert_eq!(
             SwapState::SwapSucceeded.transition_to(SwapState::Finalized),
             Ok(SwapState::Finalized)
+        );
+    }
+
+    #[test]
+    fn verified_execution_requires_final_matching_evidence() {
+        let output = AssetId::new(ChainId::new("ton-mainnet").unwrap(), "jetton:output").unwrap();
+        let intent = SwapIntent::new(
+            "intent-1",
+            ton_context(),
+            AssetAmount::new(ton(), 1_000),
+            output.clone(),
+            AssetAmount::new(output.clone(), 900),
+            PolicyVersion::new("policy-1").unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            VerifiedExecution::new(
+                &intent,
+                "evidence-1",
+                FinalityLevel::Observed,
+                AssetAmount::new(ton(), 1_000),
+                AssetAmount::new(output.clone(), 900)
+            ),
+            Err(VerifiedExecutionError::EvidenceNotFinalized)
+        );
+        assert_eq!(
+            VerifiedExecution::new(
+                &intent,
+                "evidence-1",
+                FinalityLevel::Finalized,
+                AssetAmount::new(ton(), 1_000),
+                AssetAmount::new(output, 899)
+            ),
+            Err(VerifiedExecutionError::MinimumReceivedNotMet)
         );
     }
 }

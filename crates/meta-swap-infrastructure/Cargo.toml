@@ -8,7 +8,7 @@ publish.workspace = true
 
 [dependencies]
 meta-swap-application = { path = "../meta-swap-application" }
-sqlx = { version = "0.8.6", default-features = false, features = ["migrate", "postgres", "runtime-tokio-rustls"] }
+sqlx = { version = "0.8.6", default-features = false, features = ["macros", "migrate", "postgres", "runtime-tokio-rustls"] }
 
 [dev-dependencies]
 meta-swap-domain = { path = "../meta-swap-domain" }
